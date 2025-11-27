@@ -27,7 +27,7 @@ export default function TaskPage() {
 
   // 🔥 YOUR RAILWAY BACKEND URL HERE
   // const API_BASE = "https://kmit-backend-production.up.railway.app";
-const API_BASE = "http://localhost:5000";
+const API_BASE = "https://drdl-backend.onrender.com";
 
   // LOAD HISTORY
   const loadHistory = async () => {
