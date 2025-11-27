@@ -1,5 +1,6 @@
 
-  import { useParams, Link } from "react-router-dom";
+
+import { useParams, Link } from "react-router-dom";
 import React, { useRef, useState, useEffect } from "react";
 import * as XLSX from "xlsx/dist/xlsx.full.min.js";
 
@@ -25,18 +26,19 @@ export default function TaskPage() {
 
   const handleUploadClick = () => fileInputRef.current?.click();
 
-  // 🔥 YOUR RAILWAY BACKEND URL HERE
-  // const API_BASE = "https://kmit-backend-production.up.railway.app";
-const API_BASE = "https://drdl-dynamic.onrender.com";
+  // 🔥 YOUR BACKEND URL
+  const API_BASE = "https://drdl-dynamic.onrender.com";
 
   // LOAD HISTORY
   const loadHistory = async () => {
     try {
       const res = await fetch(`${API_BASE}/history`);
+      if (!res.ok) throw new Error("Failed to fetch history");
       const data = await res.json();
       setHistoryData(data);
     } catch (err) {
       console.error("ERROR:", err);
+      alert("Failed to load history. See console for details.");
     }
   };
 
@@ -48,7 +50,7 @@ const API_BASE = "https://drdl-dynamic.onrender.com";
   const processDuplicates = (rows) => {
     const freq = {};
     rows.forEach((row, r) => {
-      row.forEach((cell, c) => {
+      (row || []).forEach((cell, c) => {
         const key = String(cell ?? "");
         if (!freq[key]) freq[key] = [];
         freq[key].push({ r, c });
@@ -73,13 +75,19 @@ const API_BASE = "https://drdl-dynamic.onrender.com";
     if (!file) return;
 
     setFileName(file.name);
+    setWorkbook(null);
+    setSheets([]);
+    setSelectedSheet("");
+    setSheetData(null);
+    setQuery("");
+    setDuplicateMap({});
 
     const data = await file.arrayBuffer();
     const wb = XLSX.read(data, { type: "array" });
 
     setWorkbook(wb);
     setSheets(wb.SheetNames);
-    setSelectedSheet(wb.SheetNames[0]);
+    setSelectedSheet(wb.SheetNames[0] ?? "");
 
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {
       header: 1,
@@ -103,6 +111,7 @@ const API_BASE = "https://drdl-dynamic.onrender.com";
     const sheetName = e.target.value;
     setSelectedSheet(sheetName);
 
+    if (!workbook) return;
     const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
       header: 1,
       raw: false,
@@ -122,10 +131,9 @@ const API_BASE = "https://drdl-dynamic.onrender.com";
   // FILTER
   const filteredData = React.useMemo(() => {
     if (!sheetData || !query) return sheetData;
-
     const lower = query.toLowerCase();
     return sheetData.filter((row) =>
-      row.some((cell) => String(cell ?? "").toLowerCase().includes(lower))
+      (row || []).some((cell) => String(cell ?? "").toLowerCase().includes(lower))
     );
   }, [sheetData, query]);
 
@@ -140,17 +148,68 @@ const API_BASE = "https://drdl-dynamic.onrender.com";
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          file_name: fileName,
+          file_name: fileName || "unnamed_from_ui.json",
           json_data: sheetData,
         }),
       });
 
       const result = await res.json();
-      alert(result.message);
+      if (!res.ok) throw new Error(result.message || "Save failed");
+      alert(result.message || "Saved successfully");
     } catch (err) {
-      alert("Failed to save");
+      console.error("Save error:", err);
+      alert("Failed to save. See console for details.");
     }
   };
+
+  // ------------------ NEW: View / Download history items ------------------
+  const viewHistoryItem = async (id, name) => {
+    try {
+      const res = await fetch(`${API_BASE}/history/${id}`);
+      if (!res.ok) throw new Error("Failed to fetch history item");
+      const data = await res.json();
+
+      // set into UI as if file loaded from frontend
+      setFileName(`${name} (from DB)`);
+      setWorkbook(null); // no workbook object (we only have JSON)
+      setSheets(["Database"]);
+      setSelectedSheet("Database");
+      setSheetData(data);
+      setQuery("");
+      setDuplicateMap({});
+      processDuplicates(data);
+
+      // close history panel
+      setShowHistory(false);
+      setShowMenu(false);
+    } catch (err) {
+      console.error("View history error:", err);
+      alert("Failed to load history item. See console for details.");
+    }
+  };
+
+  const downloadHistoryItem = async (id, name) => {
+    try {
+      const res = await fetch(`${API_BASE}/history/${id}`);
+      if (!res.ok) throw new Error("Failed to fetch history item");
+      const data = await res.json();
+
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      // name with .json
+      a.download = name ? `${name.replace(/\.[^/.]+$/, "")}.json` : `history-${id}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Download history error:", err);
+      alert("Failed to download history item.");
+    }
+  };
+  // ---------------------------------------------------------------------------
 
   return (
     <div style={styles.container}>
@@ -190,6 +249,7 @@ const API_BASE = "https://drdl-dynamic.onrender.com";
           </div>
 
           <div style={styles.historyList}>
+            {historyData.length === 0 && <div style={{ color: "#94a3b8" }}>No uploads yet.</div>}
             {historyData.map((item) => (
               <div key={item.id} style={styles.historyItem}>
                 <div style={styles.historyTextBox}>
@@ -199,6 +259,22 @@ const API_BASE = "https://drdl-dynamic.onrender.com";
                       timeZone: "Asia/Kolkata",
                     })}
                   </div>
+                </div>
+
+                <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => viewHistoryItem(item.id, item.file_name)}
+                    style={{ padding: "6px 10px", borderRadius: 6, cursor: "pointer" }}
+                  >
+                    View
+                  </button>
+
+                  <button
+                    onClick={() => downloadHistoryItem(item.id, item.file_name)}
+                    style={{ padding: "6px 10px", borderRadius: 6, cursor: "pointer" }}
+                  >
+                    Download
+                  </button>
                 </div>
               </div>
             ))}
@@ -264,7 +340,7 @@ const API_BASE = "https://drdl-dynamic.onrender.com";
                   <tbody>
                     {filteredData.map((row, r) => (
                       <tr key={r}>
-                        {row.map((cell, c) => (
+                        {((row || [])).map((cell, c) => (
                           <td
                             key={c}
                             style={{
