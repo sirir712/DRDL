@@ -77,7 +77,7 @@ function Task1Panel() {
   const [selectedDivision, setSelectedDivision] = useState("");
   const [divisionHeader, setDivisionHeader] = useState([]);
 
-  const API_BASE = "http://localhost:5000";
+  const API_BASE = "https://drdl-dynamic.onrender.com";
 
   const handleUploadClick = () => fileInputRef.current?.click();
 
